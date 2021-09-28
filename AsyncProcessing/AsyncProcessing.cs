@@ -31,7 +31,7 @@ namespace AsyncProcessingBenchmarks
             {
                 Urls = new[] { config["raven:server"] },
                 Database = config["raven:database"],
-                Certificate = new X509Certificate2(config["raven:certificate"], config["raven:certificatePassword"])
+                //Certificate = new X509Certificate2(config["raven:certificate"], config["raven:certificatePassword"])
             };
             _documentStore.Initialize();
 
@@ -42,18 +42,18 @@ namespace AsyncProcessingBenchmarks
         {
             // Let's create a healthy data set, about a 9k records should be good
             // We'll create the database with samples in the UI, and here we'll duplicate the Orders
-            var operation = await _documentStore.Operations.SendAsync(new PatchByQueryOperation(new IndexQuery
-            {
-                Query = @"from Orders 
-                        update { 
-                            for (var i = 0; i < 10; i++) {
-                                this.DocumentId = 'orders/';
-                                this.DocumentCollection = this[""@metadata""][""@collection""];
-                                put('orders/', this);
-                            }
-                        }"
-            }));
-            await operation.WaitForCompletionAsync();
+            //var operation = await _documentStore.Operations.SendAsync(new PatchByQueryOperation(new IndexQuery
+            //{
+            //    Query = @"from Orders 
+            //            update { 
+            //                for (var i = 0; i < 10; i++) {
+            //                    this.DocumentId = 'orders/';
+            //                    this.DocumentCollection = this[""@metadata""][""@collection""];
+            //                    put('orders/', this);
+            //                }
+            //            }"
+            //}));
+            //await operation.WaitForCompletionAsync();
         }
 
         [IterationCleanup]
@@ -66,119 +66,119 @@ namespace AsyncProcessingBenchmarks
             await operation.WaitForCompletionAsync();
         }
 
-        [Benchmark(Baseline = true)]
-        public async Task Linear()
-        {
-            using (var session = _documentStore.OpenAsyncSession())
-            {
-                session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
-                var skip = 0;
-                do
-                {
-                    var entries = await session.Query<Order>().OrderByDescending(x => x.Id).Skip(skip).Take(100).ToListAsync();
-                    foreach (var entry in entries)
-                    {
-                        Console.WriteLine($"Processing entry 1 '{entry.Id}'");
-                        
-                        // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
-                        using (var tempSession = _documentStore.OpenAsyncSession())
-                        {
-                            await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id, Id = "ProcessedOrders/" });
-                            await tempSession.SaveChangesAsync();
-                        }
-                    }
-                    skip += 100;
-                    if (entries.Count < 100)
-                        break;
-                } while (true);
-            }
-        }
+        //[Benchmark(Baseline = true)]
+        //public async Task Linear()
+        //{
+        //    using (var session = _documentStore.OpenAsyncSession())
+        //    {
+        //        session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
+        //        var skip = 0;
+        //        do
+        //        {
+        //            var entries = await session.Query<Order>().OrderByDescending(x => x.Id).Skip(skip).Take(100).ToListAsync();
+        //            foreach (var entry in entries)
+        //            {
+        //                Console.WriteLine($"Processing entry 1 '{entry.Id}'");
 
-        [Benchmark]
-        public async Task ForEachAsync()
-        {
-            using (var session = _documentStore.OpenSession())
-            {
-                session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
+        //                // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
+        //                using (var tempSession = _documentStore.OpenAsyncSession())
+        //                {
+        //                    await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id, Id = "ProcessedOrders/" });
+        //                    await tempSession.SaveChangesAsync();
+        //                }
+        //            }
+        //            skip += 100;
+        //            if (entries.Count < 100)
+        //                break;
+        //        } while (true);
+        //    }
+        //}
 
-                await GetDocumentsFromDatabase(session).ForEachAsync(dop: Environment.ProcessorCount, body: async entry =>
-                {
-                    Console.WriteLine($"Processing entry 2 '{entry.Id}'");
+        //[Benchmark]
+        //public async Task ForEachAsync()
+        //{
+        //    using (var session = _documentStore.OpenSession())
+        //    {
+        //        session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
 
-                    // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
-                    using (var tempSession = _documentStore.OpenAsyncSession())
-                    {
-                        await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
-                        await tempSession.SaveChangesAsync();
-                    }
-                });
-            }
-        }
+        //        await GetDocumentsFromDatabase(session).ForEachAsync(dop: Environment.ProcessorCount, body: async entry =>
+        //        {
+        //            Console.WriteLine($"Processing entry 2 '{entry.Id}'");
 
-        [Benchmark]
-        public async Task AsyncForEach()
-        {
-            using (var session = _documentStore.OpenAsyncSession())
-            {
-                session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
+        //            // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
+        //            using (var tempSession = _documentStore.OpenAsyncSession())
+        //            {
+        //                await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
+        //                await tempSession.SaveChangesAsync();
+        //            }
+        //        });
+        //    }
+        //}
 
-                await foreach (var entry in GetDocumentsFromDatabase2(session))
-                {
-                    Console.WriteLine($"Processing entry 3 '{entry.Id}'");
+        //[Benchmark]
+        //public async Task AsyncForEach()
+        //{
+        //    using (var session = _documentStore.OpenAsyncSession())
+        //    {
+        //        session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
 
-                    // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
-                    using (var tempSession = _documentStore.OpenAsyncSession())
-                    {
-                        await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
-                        await tempSession.SaveChangesAsync();
-                    }
-                }
-            }
-        }
+        //        await foreach (var entry in GetDocumentsFromDatabase2(session))
+        //        {
+        //            Console.WriteLine($"Processing entry 3 '{entry.Id}'");
 
-        [Benchmark]
-        public async Task ParallelForEachAsync()
-        {
-            using (var session = _documentStore.OpenSession())
-            {
-                session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
+        //            // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
+        //            using (var tempSession = _documentStore.OpenAsyncSession())
+        //            {
+        //                await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
+        //                await tempSession.SaveChangesAsync();
+        //            }
+        //        }
+        //    }
+        //}
 
-                await GetDocumentsFromDatabase(session).ParallelForEachAsync(dop: Environment.ProcessorCount, body: async entry =>
-                {
-                    Console.WriteLine($"Processing entry 4 '{entry.Id}'");
+        //[Benchmark]
+        //public async Task ParallelForEachAsync()
+        //{
+        //    using (var session = _documentStore.OpenSession())
+        //    {
+        //        session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
 
-                    // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
-                    using (var tempSession = _documentStore.OpenAsyncSession())
-                    {
-                        await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
-                        await tempSession.SaveChangesAsync();
-                    }
-                });
-            }
-        }
+        //        await GetDocumentsFromDatabase(session).ParallelForEachAsync(dop: Environment.ProcessorCount, body: async entry =>
+        //        {
+        //            Console.WriteLine($"Processing entry 4 '{entry.Id}'");
 
-        [Benchmark]
-        public async Task AsyncParallelForEach()
-        {
-            using (var session = _documentStore.OpenSession())
-            {
-                session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
+        //            // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
+        //            using (var tempSession = _documentStore.OpenAsyncSession())
+        //            {
+        //                await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
+        //                await tempSession.SaveChangesAsync();
+        //            }
+        //        });
+        //    }
+        //}
 
-                SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
+        //[Benchmark]
+        //public async Task AsyncParallelForEach()
+        //{
+        //    using (var session = _documentStore.OpenSession())
+        //    {
+        //        session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
 
-                await GetDocumentsFromDatabase(session).AsyncParallelForEach(async entry =>
-                {
-                    Console.WriteLine($"Processing entry 5 '{entry.Id}'");
+        //        SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
 
-                    // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
-                    using (var tempSession = _documentStore.OpenAsyncSession())
-                    {
-                        await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
-                        await tempSession.SaveChangesAsync();
-                    }
-                }, Environment.ProcessorCount, TaskScheduler.FromCurrentSynchronizationContext());
-            }
-        }
+        //        await GetDocumentsFromDatabase(session).AsyncParallelForEach(async entry =>
+        //        {
+        //            Console.WriteLine($"Processing entry 5 '{entry.Id}'");
+
+        //            // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
+        //            using (var tempSession = _documentStore.OpenAsyncSession())
+        //            {
+        //                await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
+        //                await tempSession.SaveChangesAsync();
+        //            }
+        //        }, Environment.ProcessorCount, TaskScheduler.FromCurrentSynchronizationContext());
+        //    }
+        //}
 
         [Benchmark]
         public async Task AsyncEnumerableParallelForEach()
@@ -189,7 +189,8 @@ namespace AsyncProcessingBenchmarks
 
                 SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
 
-                await GetDocumentsFromDatabase2(session).AsyncParallelForEach(async entry => {
+                await GetDocumentsFromDatabase2(session).AsyncParallelForEach(async entry =>
+                {
                     Console.WriteLine($"Processing entry 6'{entry.Id}'");
 
                     // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
@@ -202,41 +203,41 @@ namespace AsyncProcessingBenchmarks
             }
         }
 
-        [Benchmark]
-        public async Task AsyncEnumerableParallelForEachWithIndex()
-        {
-            using (var session = _documentStore.OpenAsyncSession())
-            {
-                session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
+        //[Benchmark]
+        //public async Task AsyncEnumerableParallelForEachWithIndex()
+        //{
+        //    using (var session = _documentStore.OpenAsyncSession())
+        //    {
+        //        session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
 
-                SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
+        //        SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
 
-                await GetDocumentsFromDatabase2(session).AsyncParallelForEach(async (entry, idx) => {
-                    Console.WriteLine($"Processing entry {idx}: '{entry.Id}'");
+        //        await GetDocumentsFromDatabase2(session).AsyncParallelForEach(async (entry, idx) => {
+        //            Console.WriteLine($"Processing entry {idx}: '{entry.Id}'");
 
-                    // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
-                    using (var tempSession = _documentStore.OpenAsyncSession())
-                    {
-                        await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
-                        await tempSession.SaveChangesAsync();
-                    }
-                    Console.WriteLine($"Processed entry 7'{entry.Id}'");
-                }, Environment.ProcessorCount, TaskScheduler.FromCurrentSynchronizationContext());
-            }
-        }
+        //            // This is the most expensive way I can think of doing this, obviously don't do this if you want performance
+        //            using (var tempSession = _documentStore.OpenAsyncSession())
+        //            {
+        //                await tempSession.StoreAsync(new ProcessedOrder { OrderId = entry.Id });
+        //                await tempSession.SaveChangesAsync();
+        //            }
+        //            Console.WriteLine($"Processed entry 7'{entry.Id}'");
+        //        }, Environment.ProcessorCount, TaskScheduler.FromCurrentSynchronizationContext());
+        //    }
+        //}
 
-        [Benchmark]
-        public async Task AsyncEnumerableParallelForEachVoid()
-        {
-            using (var session = _documentStore.OpenAsyncSession())
-            {
-                session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
+        //[Benchmark]
+        //public async Task AsyncEnumerableParallelForEachVoid()
+        //{
+        //    using (var session = _documentStore.OpenAsyncSession())
+        //    {
+        //        session.Advanced.MaxNumberOfRequestsPerSession = int.MaxValue;
 
-                SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
+        //        SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
 
-                await GetDocumentsFromDatabase2(session).AsyncParallelForEach(ProcessEntry, Environment.ProcessorCount, TaskScheduler.FromCurrentSynchronizationContext());
-            }
-        }
+        //        await GetDocumentsFromDatabase2(session).AsyncParallelForEach(ProcessEntry, Environment.ProcessorCount, TaskScheduler.FromCurrentSynchronizationContext());
+        //    }
+        //}
 
         private async void ProcessEntry(Order entry)
         {
